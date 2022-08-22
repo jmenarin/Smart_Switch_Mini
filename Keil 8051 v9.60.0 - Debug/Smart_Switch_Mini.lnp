@@ -1,0 +1,5 @@
+"./src/InitDevice.OBJ",
+"./src/Interrupts.OBJ",
+"./src/SILABS_STARTUP.OBJ",
+"./src/Smart_Switch_Mini_main.OBJ"
+TO "SMART_SWITCH_MINI.OMF.CRBUILD" REMOVEUNUSED PRINT(.\Smart_Switch_Mini.m51) PAGEWIDTH (120) PAGELENGTH (65) CLASSES( ECODE(C:0x0 - C:0x7fe), HCONST(C:0x0 - C:0x7fe), XDATA(X:0x0 - X:0x1))

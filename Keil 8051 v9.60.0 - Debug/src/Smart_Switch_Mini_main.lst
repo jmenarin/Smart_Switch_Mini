@@ -1,0 +1,365 @@
+C51 COMPILER V9.60.0.0   SMART_SWITCH_MINI_MAIN                                            08/08/2022 15:17:58 PAGE 1   
+
+
+C51 COMPILER V9.60.0.0, COMPILATION OF MODULE SMART_SWITCH_MINI_MAIN
+OBJECT MODULE PLACED IN .\src\Smart_Switch_Mini_main.OBJ
+COMPILER INVOKED BY: C:\SiliconLabs\SimplicityStudio\v5\developer\toolchains\keil_8051\9.60\BIN\C51.exe W:\3_DESENVOLVIM
+                    -ENTO\Projetos em andamento (PB)\Elinton- PB0183 - Smart Switch Mini WiFi\Software\Smart_Switch_Mini\src\Smart_Switch_Min
+                    -i_main.c OMF2 SMALL DEBUG OBJECTEXTEND ROM(LARGE) WARNINGLEVEL(2) FLOATFUZZY(3) OPTIMIZE(8,SPEED) DEFINE(DEBUG=1) INTVEC
+                    -TOR(0X0000) INTPROMOTE INCDIR(W:\3_DESENVOLVIMENTO\Projetos em andamento (PB)\Elinton- PB0183 - Smart Switch Mini WiFi\S
+                    -oftware\Smart_Switch_Mini\inc;C:/SiliconLabs/SimplicityStudio/v5/developer/sdks/8051/v4.2.3//Device/shared/si8051Base;C:
+                    -/SiliconLabs/SimplicityStudio/v5/developer/sdks/8051/v4.2.3//Device/EFM8BB1/inc) PRINT(.\src\Smart_Switch_Mini_main.lst)
+                    - COND PAGEWIDTH(120) PAGELENGTH(65) OBJECT(.\src\Smart_Switch_Mini_main.OBJ)
+
+line level    source
+
+   1          /*Software Desenvolvido para o Smart Switch Mini
+   2          
+   3          O Software faz a comunicação do microcontrolador com o modulo da Tuya CB3S.
+   4          O funcionamento do software é o seguinte:
+   5          Quando o interruptor muda de estado, joga um pulso na saida "Saida_Modulo" de 200ms. Essa saida esta conec
+             -tada no pino de entrada do modulo.
+   6          Quando o modulo recebe esse sinal, ele muda o valor do pino que esta conectado no "Entrada_modulo".
+   7          Se o valor do "Entrada_modulo" receber "1", significa que o Rele tem que ser ligado, se receber "0" o Rele
+             - precisa desligar.
+   8          Se segurar o botão por 5 segundos ou ligar e desligar o interruptor por 10 vezes rapidamente, entrara no 
+             -modo reset.
+   9          Para entrar no modo reset, é necessario colocar a "Saida_Modulo" em "1" por 5 segundos.
+  10          Na hora de desligar ou ligar o rele, sera sempre no zero_cross.
+  11          O software consegue diferenciar a frequencia, dispara no zero_cross tanto em 50Hz quanto em 60Hz.
+  12          
+  13          Desenvolvedor: João Menarin      6943     28/07/2022
+  14          
+  15          
+  16          */
+  17          //-----------------------------------------------------------------------------
+  18          // Includes
+  19          //-----------------------------------------------------------------------------
+  20          #include <SI_EFM8BB1_Register_Enums.h>                  // SFR declarations
+  21          #include "InitDevice.h"
+  22          #include "PinsTypedef.h"
+  23          // $[Generated Includes]
+  24          // [Generated Includes]$
+  25          
+  26          //DEFINIÇÕESv
+  27          #define NO_RESULT 0x2000
+  28          
+  29          //VARIAVEIS GLOBAIS
+  30          volatile unsigned long int cnt=0; //Variavel esta sendo usada no Interrupts.c para contagem de tempo. Cada
+             - unidade equivale a 1ms
+  31          unsigned int a = 0;               //Usada na função VerificaBotao para um laço for de 2 segundos
+  32          unsigned int contadorint = 0;     //Usada na funçao VerificaInterruptor para verificar se interruptor est
+             -a em "1" ou "0"
+  33          unsigned int statusint = 0;       //Usada na função VerificaIntettuptor para armezenar o estado do inter
+             -ruptor, "0" = interruptor aberto, "1" = interruptor fechado
+  34          unsigned int copiastatusint = 0;  //Usada na função VerificaMudancaEstado para armazenar o estado atual 
+             -do interruptor
+  35          unsigned int contadorreset = 0;   //Usada na função VerificaMudancaEstado para contagem de quantas vezes
+             - o interruptor mudou de estado em 500ms
+  36          unsigned int contador500ms = 0;   //Usada na função VerificaMudancaEstado para contagem de 500ms dentro 
+             -de um laço for
+  37          
+  38          
+  39          //Funções
+  40          
+  41          void Delay_500us(int x);
+C51 COMPILER V9.60.0.0   SMART_SWITCH_MINI_MAIN                                            08/08/2022 15:17:58 PAGE 2   
+
+  42          void Liga(void);
+  43          void Desliga(void);
+  44          void VerificaInterruptor(void);
+  45          void VerificaBotao(void);
+  46          void VerificaMudancaEstado(void);
+  47          
+  48          //-----------------------------------------------------------------------------
+  49          // SiLabs_Startup() Routine
+  50          // ----------------------------------------------------------------------------
+  51          // This function is called immediately after reset, before the initialization
+  52          // code is run in SILABS_STARTUP.A51 (which runs before main() ). This is a
+  53          // useful place to disable the watchdog timer, which is enable by default
+  54          // and may trigger before main() in some instances.
+  55          //-----------------------------------------------------------------------------
+  56          void SiLabs_Startup (void)
+  57          {
+  58   1        // $[SiLabs Startup]
+  59   1        // [SiLabs Startup]$
+  60   1      }
+  61          
+  62          //-----------------------------------------------------------------------------
+  63          // main() Routine
+  64          // ----------------------------------------------------------------------------
+  65          int main (void){
+  66   1        // Call hardware initialization routine
+  67   1        enter_DefaultMode_from_RESET();
+  68   1        Rele = 0;                                                     //Inicia o produto com o Rele em 0
+  69   1        Saida_Modulo = 1;                                             //Inicia o produto com o Saida_Modulo em 1
+  70   1        VerificaInterruptor();                                        //Verifica o estado do interruptor
+  71   1        copiastatusint = statusint;                                   //Armezana o estado do interruptor, para c
+             -omeçar o produto sempre com o Rele desligado
+  72   1      
+  73   1        while (1) {
+  74   2      
+  75   2            VerificaInterruptor();                                    //Verifica o estado do interruptor
+  76   2            if(statusint != copiastatusint){VerificaMudancaEstado();} //Se "statusint" for diferente de "d", cha
+             -ma a função "VerificaMudanca"
+  77   2            VerificaBotao();                                          //Verifica o estado do botão e liga ou de
+             -sliga o rele, ou entra no modo reset
+  78   2            if(Entrada_Modulo == 1 && Rele == 0){
+  79   3                Liga();                                               //Liga a carga
+  80   3            }
+  81   2            if(Entrada_Modulo == 0 && Rele == 1){
+  82   3                Desliga();                                            //Desliga a carga
+  83   3                Delay_500us(100);                                     //Delay de 100ms
+  84   3            }
+  85   2         }
+  86   1      }
+  87          
+  88          
+  89          /*********************************************************************************************************
+             -********************
+  90           Função VerificaMudanca
+  91           Essa função verifica se o interruptor mudou de estado e ananalisa se é pra entrar no modo reset ou se 
+             -é apenas para mudar o estado da carga
+  92          
+  93          **********************************************************************************************************
+             -********************/
+  94          
+  95          void VerificaMudancaEstado(void){
+  96   1      if(statusint != copiastatusint){                                           //Se "statusint" for diferente 
+             -de "d", significa que o interruptor mudou de estado
+  97   2               copiastatusint = statusint;                                       //Armazena o valor de "statusin
+C51 COMPILER V9.60.0.0   SMART_SWITCH_MINI_MAIN                                            08/08/2022 15:17:58 PAGE 3   
+
+             -t" na variavel "d", armazenando o novo estado do interruptor
+  98   2               contadorreset++;                                                  //Incrementa g++
+  99   2               for(contador500ms = 0; contador500ms < 500; contador500ms++){     //Laço for de 500ms, para veri
+             -ficar se o interruptor vai mudar de estado dentro desses 500ms
+ 100   3                   cnt = 1; while(cnt);                                          //Delay de 1ms
+ 101   3                   VerificaInterruptor();                                        //Verifica o estado do interrup
+             -tor
+ 102   3                   if(statusint != copiastatusint){                              //Se statusint for diferente de
+             - "d", significa que mudou de estado dentro dos 500ms,
+ 103   4                       copiastatusint = statusint;                               //Armazena o valor de "statusin
+             -t" na variavel "d", armazenando o novo estado do interruptor
+ 104   4                       contadorreset++;                                          //incrementa g
+ 105   4                       contador500ms = 0;                                        //Zera a variavel "h"
+ 106   4                   }
+ 107   3                   if(contadorreset >= 10){                                      //Se g for maior ou igual a 10,
+             - significa que quer entrar no modo reset, para entrar no modo reset, precisa colocar a saida Reset em nivel "0" por 5 se
+             -gundos
+ 108   4                       Saida_Modulo = 0;                                         //Atribui "0" para a saida Rese
+             -t
+ 109   4                       Delay_500us(12000);                                       //Delay de 6 segundos para entr
+             -ar no modo reset
+ 110   4                       Saida_Modulo = 1;                                         //Atribui "1" para a saida Rese
+             -t
+ 111   4                       contadorreset = 0;                                        //Atribui "0" na variavel "g"
+ 112   4                       contador500ms = 0;                                        //Atribui "0" na variavel "h"
+ 113   4                   }
+ 114   3               }
+ 115   2               if(contador500ms >= 499 && contadorreset < 10){                   //Se não houve mudança de est
+             -ado do interruptor dentro dos 500ms
+ 116   3                   contadorreset = 0;                                            //Atribui "0" na variavel "g"
+ 117   3                   contador500ms = 0;                                            //Atribui "0" na variavel "h"
+ 118   3                   Saida_Modulo = 0;                                             //Atribui "0" a saida Reset par
+             -a mandar informação para o modulo que o Rele precisa mudar de estado
+ 119   3                   Delay_500us(200);                                             //Delay de 200ms
+ 120   3                   Saida_Modulo = 1;                                             //Atribui "1" a saida Reset
+ 121   3               }
+ 122   2           }
+ 123   1      }
+ 124          
+ 125          /*********************************************************************************************************
+             -**********************
+ 126          Função VerificaBotoes
+ 127          Essa função verifica se o Botão esta pressionado e depois de passar 10 segundos entra no modo reset.
+ 128          O botão precisa ficar pressionado por 10 segundos para entrar no modo reset
+ 129          
+ 130           *********************************************************************************************************
+             -************************/
+ 131          
+ 132          void VerificaBotao (void){
+ 133   1      
+ 134   1        if(Botao == 1){Saida_Modulo = 1;}
+ 135   1        if(Botao == 0){
+ 136   2            for( a = 0; a < 5000; a++){
+ 137   3                cnt = 1; while(cnt);
+ 138   3                if(Botao == 1){
+ 139   4                    break;
+ 140   4                }
+ 141   3            }
+ 142   2            Saida_Modulo = 0;
+ 143   2        }
+ 144   1      }
+ 145          
+ 146          /*********************************************************************************************************
+C51 COMPILER V9.60.0.0   SMART_SWITCH_MINI_MAIN                                            08/08/2022 15:17:58 PAGE 4   
+
+             -************************
+ 147           Função VerificaInterruptor
+ 148           Essa função analisa qual estado esta o interruptor. Se o interruptor estiver aberto, o sinal vai ficar 
+             -sempre em nivel logico "1".
+ 149           Se o interruptor estiver fechado, ele ficara alternando entre nivel logico "1" e "0".
+ 150           Se a variavel "c" for maior ou igual a 50, significa que o interruptor esta aberto.
+ 151          **********************************************************************************************************
+             -***********************/
+ 152          
+ 153          
+ 154          void VerificaInterruptor(void){
+ 155   1      
+ 156   1        if(Interruptor == 0){                       //Se interruptor igual a "0".
+ 157   2            contadorint = 0;                        //Zera a variavel c.
+ 158   2            statusint = 1;                          //Atribui "1" a variavel statusint, indicando que o interrup
+             -tor esta fechado.
+ 159   2        }
+ 160   1        if(Interruptor == 1 && contadorint <= 50){
+ 161   2            cnt = 1; while(cnt);                    //Delay de 1ms
+ 162   2            contadorint++;                          //Incrementa "c"
+ 163   2            if(Interruptor == 0){                   //Se interruptor é igual a "0", significa que o interruptor
+             - esta fechado.
+ 164   3                statusint = 1;                      //Atribui "1" a variavel statusint, indicando que o interrup
+             -tor esta fechado.
+ 165   3                contadorint = 0;                    //Zera a variavel c
+ 166   3            }
+ 167   2            if(contadorint >= 50){                  //Se "c" for igual ou maior que 50, significa que o interrup
+             -tor esta em estado logico 1, ou seja, interruptor aberto,
+ 168   3                statusint = 0;                      //Atribui "0" a variavel statusint, indicando que o interrup
+             -tor esta aberto.
+ 169   3                contadorint = 0;                    //Zera a variavel "c"
+ 170   3            }
+ 171   2         }
+ 172   1       }
+ 173          
+ 174          
+ 175          /*********************************************************************************************************
+             -************************
+ 176           Função EperaZero0
+ 177           Espera o zero da senoide da tensão de entrada no momento da descida do nivel alto para baixo ou do nivel
+             - baixo para alto.
+ 178          **********************************************************************************************************
+             -***********************/
+ 179          void Liga(void){                  // Definição da função "EsperaZero"
+ 180   1       int e=0,f=0;
+ 181   1       if(Zero==1){                     // Se a senoide estiver em 1, aguarda ela passar por 0
+ 182   2            do { Delay_500us(1); }      // Delay de 500us verificando o sinal da senoide
+ 183   2            while(Zero!= 0);            // Quando for 0, retorna para o disparo da carga
+ 184   2            for(e=0; e<20; e++){        // Conta um tempo de 20ms
+ 185   3              Delay_500us(2);           // Delay de 1ms.
+ 186   3              if (Zero==1){f++;};       // Durante o periodo de 20ms analisa-se o tempo que a senoide fica em ni
+             -vel alto(1) e incrementa a variavel f
+ 187   3            }
+ 188   2            if(f<=9){Delay_500us(20);}   // Se o tempo que a senoide ficou em nivel alto for menor que 9ms a red
+             -e é 60Hz então aguardo 8ms para ligar a carga,
+ 189   2            else{Delay_500us(13);}       // Se for maior que 9ms a rede é 50Hz então aguardo 4,5ms para aciona
+             -r a carga
+ 190   2       }
+ 191   1       else{                            // Senão, se a senoide ja estiver em 0, espera ela ir para 1
+ 192   2            do {Delay_500us(1);}        // Delay de 500us verificando o sinal da senoide
+ 193   2            while(Zero!= 1);            // Quando for 1, espera passar por 0 novamente
+ 194   2            if(Zero==1){                // Se Zero igual a 1 segue a instrução
+ 195   3              do {Delay_500us(1);}      // Delay de 500us verificando o sinal da senoide
+C51 COMPILER V9.60.0.0   SMART_SWITCH_MINI_MAIN                                            08/08/2022 15:17:58 PAGE 5   
+
+ 196   3              while(Zero!= 0);          // Quando for 0, retorna para o disparo da carga
+ 197   3              for(e=0; e<20; e++){      // Conta um tempo de 20ms
+ 198   4                 Delay_500us(2);        // Delay de 1ms.
+ 199   4                 if (Zero==1){f++;};    // Durante o periodo de 20ms analisa-se o tempo que a senoide fica em ni
+             -vel alto(1) e incrementa a variavel f
+ 200   4              }
+ 201   3              if(f<=9){Delay_500us(20);} // Se o tempo que a senoide ficou em nivel alto for menor que 9ms a red
+             -e é 60Hz então aguardo 8ms para ligar a carga,
+ 202   3              else{Delay_500us(13);}     // Se for maior que 9ms a rede é 50Hz então aguardo 4,5ms para aciona
+             -r a carga
+ 203   3            }
+ 204   2        }
+ 205   1       Rele=1;
+ 206   1       return;
+ 207   1      }
+ 208          
+ 209          /*********************************************************************************************************
+             -************************
+ 210           Função EperaZero0
+ 211           Espera o zero da senoide da tensão de entrada no momento da descida do nivel alto para baixo ou do nivel
+             - baixo para alto.
+ 212          **********************************************************************************************************
+             -***********************/
+ 213          void Desliga(void){               // Definição da função "EsperaZero"
+ 214   1       int e=0,f=0;
+ 215   1       if(Zero==1){                     // Se a senoide estiver em 1, aguarda ela passar por 0
+ 216   2            do { Delay_500us(1); }      // Delay de 500us verificando o sinal da senoide
+ 217   2            while(Zero!= 0);            // Quando for 0, retorna para o disparo da carga
+ 218   2            for(e=0; e<20; e++){        // Conta um tempo de 20ms
+ 219   3              Delay_500us(2);           // Delay de 1ms.
+ 220   3              if (Zero==1){f++;};       // Durante o periodo de 20ms analisa-se o tempo que a senoide fica em ni
+             -vel alto(1) e incrementa a variavel f
+ 221   3            }
+ 222   2            if(f<=9){Delay_500us(19);}   // Se o tempo que a senoide ficou em nivel alto for menor que 9ms a red
+             -e é 60Hz então aguardo 8ms para ligar a carga,
+ 223   2            else{Delay_500us(13);}       // Se for maior que 9ms a rede é 50Hz então aguardo 4,5ms para aciona
+             -r a carga
+ 224   2       }
+ 225   1        else{                           // Senão, se a senoide ja estiver em 0, espera ela ir para 1
+ 226   2            do {Delay_500us(1);}        // Delay de 500us verificando o sinal da senoide
+ 227   2            while(Zero!= 1);            // Quando for 1, espera passar por 0 novamente
+ 228   2            if(Zero==1){                // Se Zero igual a 1 segue a instrução
+ 229   3              do {Delay_500us(1);}      // Delay de 500us verificando o sinal da senoide
+ 230   3              while(Zero!= 0);          // Quando for 0, retorna para o disparo da carga
+ 231   3              for(e=0; e<20; e++){      // Conta um tempo de 20ms
+ 232   4                 Delay_500us(2);        // Delay de 1ms.
+ 233   4                 if (Zero==1){f++;};    // Durante o periodo de 20ms analisa-se o tempo que a senoide fica em ni
+             -vel alto(1) e incrementa a variavel f
+ 234   4              }
+ 235   3              if(f<=9){Delay_500us(19);} // Se o tempo que a senoide ficou em nivel alto for menor que 9ms a red
+             -e é 60Hz ent�o aguardo 8ms para ligar a carga,
+ 236   3              else{Delay_500us(13);}     // Se for maior que 9ms a rede �é 50Hz então aguardo 4,5ms para aci
+             -onar a carga
+ 237   3            }
+ 238   2        }
+ 239   1       Rele=0;
+ 240   1       return;
+ 241   1      }
+ 242          
+ 243          /***************************************************************************************
+ 244           Função Delay_500us
+ 245           Essa função verifica o valor passado para contagem de tempo na variavel cnt se for menor
+ 246           que 255 ele atribiu o valor direto para cnt que é decrementado pela interrupção normalmente,
+C51 COMPILER V9.60.0.0   SMART_SWITCH_MINI_MAIN                                            08/08/2022 15:17:58 PAGE 6   
+
+ 247           caso o valor seja maior que 255, essa função verifica em quantos valores de 255 o valor inicial
+ 248           passado pode ser dividido, carregando em cnt o valor de 255 tantas vezes quantas forem necessarias
+ 249           para atingir o valor inicial passado para função.
+ 250          ****************************************************************************************/
+ 251          
+ 252          void Delay_500us(int x){ // Função para contagem de tempo
+ 253   1        int y=0,z=0,l=0;
+ 254   1      
+ 255   1        if(x<256){cnt=x; while(cnt);}
+ 256   1        else{ do{x=x-255;
+ 257   3                 z++;
+ 258   3                }while(x>=255);
+ 259   2              for(l=z; l>0; l--){
+ 260   3               cnt=255;while(cnt);
+ 261   3              }
+ 262   2              cnt=x; while(cnt);
+ 263   2        }
+ 264   1       return;
+ 265   1      }
+ 266          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    896    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     16      12
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
